@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-08
+
 ### Added
-- Future features and improvements will be listed here
+- Field tools: `baserow_list_fields`, `baserow_create_field`, `baserow_update_field`, `baserow_delete_field`
+- Database API token tools: `baserow_list_api_tokens`, `baserow_create_api_token` (returns the key, optional scoped permissions), `baserow_update_api_token` (rename / permissions / rotate key), `baserow_delete_api_token`
+
+### Fixed
+- JWT expiry is now read from the token's `exp` claim instead of an assumed 60 minutes (Baserow's default access-token lifetime is 10 minutes)
+- A request rejected with `ERROR_INVALID_ACCESS_TOKEN` / 401 now refreshes the token once and is replayed
 
 ## [0.1.0] - 2024-05-31
 

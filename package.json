@@ -1,6 +1,6 @@
 {
   "name": "mcp-baserow",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server for Baserow API integration - Enable AI assistants to interact with Baserow databases",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

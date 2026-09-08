@@ -32,6 +32,14 @@ import {
   handleAuthTools,
   getAuthToolSchemas
 } from './tools/auth.js';
+import {
+  handleFieldTools,
+  getFieldToolSchemas
+} from './tools/field.js';
+import {
+  handleTokenTools,
+  getTokenToolSchemas
+} from './tools/token.js';
 
 // Load environment variables
 dotenv.config();
@@ -93,7 +101,7 @@ const server = new Server(
   {
     name: 'baserow-mcp-server',
     vendor: 'baserow',
-    version: '0.1.0',
+    version: '0.2.0',
     description: 'MCP server for Baserow API integration'
   },
   {
@@ -128,8 +136,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     ...getDatabaseToolSchemas(),
     // Table tools
     ...getTableToolSchemas(),
+    // Field tools
+    ...getFieldToolSchemas(),
     // Row tools
-    ...getRowToolSchemas()
+    ...getRowToolSchemas(),
+    // Database API token tools
+    ...getTokenToolSchemas()
   ];
 
   return { tools };
@@ -171,6 +183,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // Auth tools
     if (name.startsWith('baserow_auth')) {
       return await handleAuthTools(baserowClient, name, args);
+    }
+
+    // Field tools (routed before the substring checks below)
+    if (name.startsWith('baserow_') && name.includes('field')) {
+      return await handleFieldTools(baserowClient, name, args);
+    }
+
+    // Database API token tools
+    if (name.startsWith('baserow_') && name.includes('api_token')) {
+      return await handleTokenTools(baserowClient, name, args);
     }
 
     // Workspace tools

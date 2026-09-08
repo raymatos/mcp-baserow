@@ -5,6 +5,24 @@ import {
   AuthRefreshResponse
 } from './types/baserow';
 
+/** Fallback lifetime when a JWT carries no readable `exp` claim. Baserow's default access-token lifetime is 10 minutes. */
+const DEFAULT_JWT_LIFETIME_MS = 10 * 60 * 1000;
+/** Refresh this long before the token actually expires. */
+const EXPIRY_BUFFER_MS = 60 * 1000;
+
+/** Read the `exp` claim (ms since epoch) out of a JWT without verifying it. */
+function jwtExpiryMs(token: string): number | undefined {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return undefined;
+    const json = Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    const exp = JSON.parse(json).exp;
+    return typeof exp === 'number' ? exp * 1000 : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export class AuthManager {
   private config: BaserowAuthConfig;
   private axios: AxiosInstance;
@@ -41,6 +59,47 @@ export class AuthManager {
     }
   }
 
+  /** Whether a rejected token can be replaced without user input. */
+  canRefresh(): boolean {
+    return (
+      this.config.type === 'credentials' ||
+      (this.config.type === 'jwt' && !!this.config.refreshToken)
+    );
+  }
+
+  /**
+   * Force a new access token. Used when the API rejects the current one
+   * (e.g. the server's token lifetime is shorter than we assumed).
+   */
+  async forceRefresh(): Promise<void> {
+    if (this.config.type === 'credentials') {
+      if (this.config.refreshToken) {
+        try {
+          await this.refreshToken();
+          return;
+        } catch {
+          // fall through to a full login
+        }
+      }
+      await this.login();
+      return;
+    }
+    if (this.config.type === 'jwt' && this.config.refreshToken) {
+      await this.refreshToken();
+      return;
+    }
+    throw new Error('Cannot refresh token: no credentials or refresh token available');
+  }
+
+  private isExpiringSoon(): boolean {
+    return !!this.config.tokenExpiry && Date.now() > this.config.tokenExpiry - EXPIRY_BUFFER_MS;
+  }
+
+  private applyAccessToken(token: string): void {
+    this.config.token = token;
+    this.config.tokenExpiry = jwtExpiryMs(token) ?? Date.now() + DEFAULT_JWT_LIFETIME_MS;
+  }
+
   /**
    * Get JWT auth header, handling expiration
    */
@@ -49,8 +108,7 @@ export class AuthManager {
       throw new Error('JWT token not provided');
     }
 
-    // Check if token is expired or about to expire (5 minutes buffer)
-    if (this.config.tokenExpiry && Date.now() > this.config.tokenExpiry - 5 * 60 * 1000) {
+    if (this.isExpiringSoon()) {
       if (this.config.refreshToken) {
         await this.refreshToken();
       } else {
@@ -70,8 +128,7 @@ export class AuthManager {
       await this.login();
     }
 
-    // Check if token is expired or about to expire (5 minutes buffer)
-    if (this.config.tokenExpiry && Date.now() > this.config.tokenExpiry - 5 * 60 * 1000) {
+    if (this.isExpiringSoon()) {
       if (this.config.refreshToken) {
         await this.refreshToken();
       } else {
@@ -97,10 +154,8 @@ export class AuthManager {
         password: this.config.password
       });
 
-      this.config.token = response.data.token;
+      this.applyAccessToken(response.data.token);
       this.config.refreshToken = response.data.refresh_token;
-      // Set token expiry to 55 minutes from now (5 minute buffer)
-      this.config.tokenExpiry = Date.now() + 55 * 60 * 1000;
     } catch (error) {
       if (axios.isAxiosError(error) && error.response) {
         throw new Error(`Login failed: ${error.response.data.detail || error.response.statusText}`);
@@ -122,9 +177,7 @@ export class AuthManager {
         refresh_token: this.config.refreshToken
       });
 
-      this.config.token = response.data.token;
-      // Set token expiry to 55 minutes from now (5 minute buffer)
-      this.config.tokenExpiry = Date.now() + 55 * 60 * 1000;
+      this.applyAccessToken(response.data.token);
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 401) {
         // Refresh token is invalid, try to re-login if we have credentials
@@ -173,12 +226,11 @@ export class AuthManager {
    */
   setToken(token: string, type: 'jwt' | 'database_token'): void {
     this.config.type = type;
-    this.config.token = token;
     
     if (type === 'jwt') {
-      // JWT tokens expire in 60 minutes, set to 55 for safety
-      this.config.tokenExpiry = Date.now() + 55 * 60 * 1000;
+      this.applyAccessToken(token);
     } else {
+      this.config.token = token;
       // Database tokens don't expire
       this.config.tokenExpiry = undefined;
     }

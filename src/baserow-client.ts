@@ -17,9 +17,17 @@ import {
   UpdateRowParams,
   BatchCreateRowsParams,
   BatchUpdateRowsParams,
-  BatchDeleteRowsParams
+  BatchDeleteRowsParams,
+  CreateFieldParams,
+  UpdateFieldParams,
+  ApiToken,
+  ApiTokenPermissions,
+  CreateApiTokenParams,
+  UpdateApiTokenParams
 } from './types/baserow';
 import { AuthManager } from './auth-manager.js';
+
+type RetryableRequestConfig = AxiosRequestConfig & { _authRetried?: boolean };
 
 export class BaserowClient {
   private axios: AxiosInstance;
@@ -47,9 +55,23 @@ export class BaserowClient {
       (error) => Promise.reject(error)
     );
 
+    // On a rejected access token, refresh once and replay the request.
+    // Baserow's access-token lifetime is configurable server-side, so the
+    // token can be rejected before our locally tracked expiry.
     this.axios.interceptors.response.use(
       response => response,
-      this.handleError
+      async (error: AxiosError<BaserowError>) => {
+        const cfg = error.config as RetryableRequestConfig | undefined;
+        const isAuthError =
+          error.response?.status === 401 ||
+          error.response?.data?.error === 'ERROR_INVALID_ACCESS_TOKEN';
+        if (isAuthError && cfg && !cfg._authRetried && this.authManager.canRefresh()) {
+          cfg._authRetried = true;
+          await this.authManager.forceRefresh();
+          return this.axios.request(cfg);
+        }
+        return this.handleError(error);
+      }
     );
   }
 
@@ -133,6 +155,72 @@ export class BaserowClient {
       `/api/database/fields/table/${tableId}/`
     );
     return response.data;
+  }
+
+  // Field operations
+  async createField(params: CreateFieldParams): Promise<Field> {
+    const response = await this.axios.post<Field>(
+      `/api/database/fields/table/${params.table_id}/`,
+      { name: params.name, type: params.type, ...(params.options || {}) }
+    );
+    return response.data;
+  }
+
+  async updateField(params: UpdateFieldParams): Promise<Field> {
+    const body: Record<string, any> = { ...(params.options || {}) };
+    if (params.name !== undefined) body.name = params.name;
+    if (params.type !== undefined) body.type = params.type;
+    const response = await this.axios.patch<Field>(
+      `/api/database/fields/${params.field_id}/`,
+      body
+    );
+    return response.data;
+  }
+
+  async deleteField(fieldId: number): Promise<void> {
+    await this.axios.delete(`/api/database/fields/${fieldId}/`);
+  }
+
+  // Database (API) token operations — require JWT/credentials auth, not a database token
+  async listApiTokens(): Promise<ApiToken[]> {
+    const response = await this.axios.get<ApiToken[]>('/api/database/tokens/');
+    return response.data;
+  }
+
+  async createApiToken(params: CreateApiTokenParams): Promise<ApiToken> {
+    const response = await this.axios.post<ApiToken>('/api/database/tokens/', {
+      name: params.name,
+      workspace: params.workspace_id
+    });
+    let token = response.data;
+    if (params.permissions) {
+      // Baserow creates tokens with full access; anything not granted here is denied.
+      const permissions: ApiTokenPermissions = {
+        create: params.permissions.create ?? false,
+        read: params.permissions.read ?? false,
+        update: params.permissions.update ?? false,
+        delete: params.permissions.delete ?? false
+      };
+      const updated = await this.updateApiToken({ token_id: token.id, permissions });
+      token = { ...updated, key: updated.key ?? token.key };
+    }
+    return token;
+  }
+
+  async updateApiToken(params: UpdateApiTokenParams): Promise<ApiToken> {
+    const body: Record<string, any> = {};
+    if (params.name !== undefined) body.name = params.name;
+    if (params.permissions !== undefined) body.permissions = params.permissions;
+    if (params.rotate_key) body.rotate_key = true;
+    const response = await this.axios.patch<ApiToken>(
+      `/api/database/tokens/${params.token_id}/`,
+      body
+    );
+    return response.data;
+  }
+
+  async deleteApiToken(tokenId: number): Promise<void> {
+    await this.axios.delete(`/api/database/tokens/${tokenId}/`);
   }
 
   // Row operations

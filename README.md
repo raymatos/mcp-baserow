@@ -183,6 +183,12 @@ Once configured, you can use natural language in your MCP client:
 - `baserow_list_tables` - List tables in database
 - `baserow_get_table` - Get table with field definitions
 - `baserow_create_table` - Create new table
+
+#### Field Management
+- `baserow_list_fields` - List fields (columns) of a table
+- `baserow_create_field` - Create a field (text, number, single_select, boolean, date, ...)
+- `baserow_update_field` - Rename a field or change its type/options
+- `baserow_delete_field` - Delete a field
 </details>
 
 <details>
@@ -196,6 +202,12 @@ Once configured, you can use natural language in your MCP client:
 - `baserow_batch_create_rows` - Create multiple rows
 - `baserow_batch_update_rows` - Update multiple rows
 - `baserow_batch_delete_rows` - Delete multiple rows
+
+#### Database API Tokens (JWT/credentials auth only)
+- `baserow_list_api_tokens` - List your database API tokens
+- `baserow_create_api_token` - Create a token (returns the key), optionally scoped to tables/databases per operation
+- `baserow_update_api_token` - Rename, change permissions, or rotate the key
+- `baserow_delete_api_token` - Delete a token
 </details>
 
 ## 🧪 Development

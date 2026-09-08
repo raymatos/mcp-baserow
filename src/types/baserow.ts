@@ -131,3 +131,49 @@ export interface BatchDeleteRowsParams {
   table_id: number;
   row_ids: number[];
 }
+// Field operations
+export interface CreateFieldParams {
+  table_id: number;
+  name: string;
+  type: string;
+  /** Type-specific options merged into the request body (e.g. select_options, number_decimal_places) */
+  options?: Record<string, any>;
+}
+
+export interface UpdateFieldParams {
+  field_id: number;
+  name?: string;
+  type?: string;
+  options?: Record<string, any>;
+}
+
+// Database (API) tokens — the "Token xxx" keys used by forms, n8n, etc.
+export type ApiTokenScope = boolean | Array<['database' | 'table', number]>;
+
+export interface ApiTokenPermissions {
+  create: ApiTokenScope;
+  read: ApiTokenScope;
+  update: ApiTokenScope;
+  delete: ApiTokenScope;
+}
+
+export interface ApiToken {
+  id: number;
+  name: string;
+  workspace: number;
+  key?: string;
+  permissions: ApiTokenPermissions;
+}
+
+export interface CreateApiTokenParams {
+  name: string;
+  workspace_id: number;
+  permissions?: Partial<ApiTokenPermissions>;
+}
+
+export interface UpdateApiTokenParams {
+  token_id: number;
+  name?: string;
+  permissions?: Partial<ApiTokenPermissions>;
+  rotate_key?: boolean;
+}
